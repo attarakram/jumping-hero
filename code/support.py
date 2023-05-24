@@ -21,22 +21,6 @@ def import_csv_layout(path):
 			terrain_map.append(list(row))
 		return terrain_map
 
-def import_cut_graphics(tilesize, path):
-	surface = pygame.image.load(path).convert_alpha()
-	tile_num_x = int(surface.get_size()[0] / tilesize)
-	tile_num_y = int(surface.get_size()[1] / tilesize)
-
-	cut_tiles = []
-	for row in range(tile_num_y):
-		for col in range(tile_num_x):
-			x = col * tilesize
-			y = row * tilesize
-			new_surf = pygame.Surface((tilesize, tilesize),flags = pygame.SRCALPHA)
-			new_surf.blit(surface,(0,0),pygame.Rect(x, y, tilesize, tilesize))
-			cut_tiles.append(new_surf)
-
-	return cut_tiles
-
 def import_graphics(tilesize_x, tilesize_y, path):
 	surface = pygame.image.load(path).convert_alpha()
 	tile_num_x = int(surface.get_size()[0] /  tilesize_x)

@@ -2,20 +2,20 @@ import pygame
 from support import import_folder
 from math import sin
 from setting import window_width, window_height
+from audio import *
 
 class Player(pygame.sprite.Sprite):
-	def __init__(self, x, y, surface, change_health, check_fall):
+	def __init__(self, x, y, surface, set_health, check_fall):
 		super().__init__()
 		self.import_character_assets()
 		self.frame_index = 0
-		self.animation_speed = 0.10
+		self.animation_speed = 0.15
 		self.image = self.animations['idle'][self.frame_index]
 		self.rect = self.image.get_rect(topleft = (x, y))
-		self.spawn_x = x
-		self.spawn_y = y
 
 		# player movement
 		self.direction = pygame.math.Vector2(0,0)
+		self.dashing = False
 		self.speed = 3
 		self.gravity = 0.6
 		self.jump_speed = -15
@@ -28,11 +28,9 @@ class Player(pygame.sprite.Sprite):
 		self.on_ceiling = False
 		self.on_left = False
 		self.on_right = False
-		self.is_attacking = False
-		self.check_fall = check_fall
 
 		# health management
-		self.change_health = change_health
+		self.set_health = set_health
 		self.invincible = False
 		self.invincibility_duration = 500
 		self.hurt_time = 0
@@ -72,11 +70,11 @@ class Player(pygame.sprite.Sprite):
 
 	def get_input(self):
 		keys = pygame.key.get_pressed()
-
-		if keys[pygame.K_RIGHT] and self.rect.x < window_width - 20:
+		keys_pressed = pygame.event.get()
+		if keys[pygame.K_d] or keys[pygame.K_RIGHT] and self.rect.x < window_width - 20:
 			self.direction.x = 1
 			self.facing_right = True
-		elif keys[pygame.K_LEFT] and self.rect.x > 0:
+		elif keys[pygame.K_a] or keys[pygame.K_LEFT] and self.rect.x > 0:
 			self.direction.x = -1
 			self.facing_right = False
 		else:
@@ -84,7 +82,12 @@ class Player(pygame.sprite.Sprite):
 
 		if keys[pygame.K_SPACE] and self.on_ground:
 			self.jump()
-        
+			
+		if keys[pygame.K_LSHIFT] and self.on_ground:
+			self.dashing = True
+			self.dash()
+		else:
+			self.dashing = False
 			
 	def get_status(self):
 		if self.direction.y < 0:
@@ -103,19 +106,20 @@ class Player(pygame.sprite.Sprite):
 
 	def jump(self):
 		self.direction.y = self.jump_speed
+		channel_player.play(jumping)
+		channel_player.set_volume(1.5)
+	
+	def dash(self):
+		if self.dashing == True:
+			self.speed = 5
 
-	def respawn(self):
-		if self.check_fall == True:
-			self.rect.x = self.spawn_x
-			self.rect.y = self.spawn_y
-			self.image.x = self.spawn_x
-			self.image.y = self.spawn_y
-			self.collision_rect = pygame.Rect(self.rect.topleft, (30, 37))
-			self.get_damage()
+	def check_dash(self):
+		if self.dashing == False:
+			self.speed = 3
 
-	def get_damage(self):
+	def get_damage(self, amount):
 		if not self.invincible:
-			self.change_health(-5)
+			self.set_health(amount)
 			self.invincible = True
 			self.hurt_time = pygame.time.get_ticks()
 
@@ -134,6 +138,7 @@ class Player(pygame.sprite.Sprite):
 		self.get_input()
 		self.get_status()
 		self.animate()
+		self.check_dash()
 		self.invincibility_timer()
 		self.wave_value()
 		

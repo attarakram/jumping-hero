@@ -1,30 +1,32 @@
 import pygame 
-from support import import_csv_layout, import_cut_graphics
+from support import import_csv_layout
 from tiles import Tile, StaticTile, Gems
 from setting import *
 from player import Player
-from entity import Slime, Worm, Knight, Boss
+from entity import Slime, GiantSlime, Worm, GiantWorm, Knight, Boss
+from audio import *
 
 from abc import ABC
 from abc import abstractmethod
 
-
 class LevelInitial(ABC):
-        def __init__(self, level_data, surface, change_gems, change_health):
+        def __init__(self, level_data, surface, set_score, set_health):
+                # necessary variables initialization
                 self.display_surface = surface
                 self.world_shift = 0
                 self.current_level = 0
                 self.boss_health = 0
 
-                self.change_gems = change_gems
+                # boolean variables initialization
                 self.win = False
+                self.gems_collide = False
 
         @abstractmethod
         def create_tile_group(self, layout, type):
                 pass
         
         @abstractmethod
-        def player_setup(self,layout,change_health):
+        def player_setup(self,layout,set_health):
                 pass
 
 class LevelFunction(ABC):
@@ -73,44 +75,37 @@ class LevelFunction(ABC):
                 else:
                         self.player_on_ground = False
 
+        @abstractmethod
         def check_win(self):
-                if pygame.sprite.spritecollide(self.player.sprite, self.goal, False):
-                        self.win = True
-                        return self.win
+                pass
         
+        @abstractmethod
         def check_gems_collisions(self):
-                collided_gems = pygame.sprite.spritecollide(self.player.sprite,self.gems_sprites,True)
-                if collided_gems:
-                        for gems in collided_gems:
-                                pass
-        
-        def check_death(self):
-                if self.player.sprite.health:
-                        self.death = True
-                        return self.death
+                pass
 
         @abstractmethod        
         def check_enemy_collisions(self):
                 pass
 
         @abstractmethod
-        def run(self):
-                pass
-
-        @abstractmethod
         def check_fall(self):
                 pass 
 
+        @abstractmethod
+        def run(self):
+                pass
+
 
 class LevelForest(LevelInitial, LevelFunction):
-        def __init__(self, level_data, surface, change_gems, change_health):
-                LevelInitial.__init__(self, level_data, surface, change_gems, change_health)
+        def __init__(self, level_data, surface, set_score, set_health, map):
+                LevelInitial.__init__(self, level_data, surface, set_score, set_health)
+                self.set_score = set_score
 
                 # sprites setup
                 player_layout = import_csv_layout(level_data['player'])
                 self.player = pygame.sprite.GroupSingle()
                 self.goal = pygame.sprite.GroupSingle()
-                self.player_setup(player_layout, change_health)
+                self.player_setup(player_layout, set_health)
 
                 terrain_layout = import_csv_layout(level_data['terrain'])
                 self.terrain_sprites = self.create_tile_group(terrain_layout,'terrain')
@@ -118,7 +113,7 @@ class LevelForest(LevelInitial, LevelFunction):
                 gems_layout = import_csv_layout(level_data['gems'])
                 self.gems_sprites = self.create_tile_group(gems_layout,'gems')
 
-                self.map = pygame.image.load('../level/images/level_0.png')
+                self.map = map
 
                 constraint_layout = import_csv_layout(level_data['constraint'])
                 self.constraint_sprites = self.create_tile_group(constraint_layout,'constraint')
@@ -136,9 +131,7 @@ class LevelForest(LevelInitial, LevelFunction):
                                         y = row_index * tile_size_0
 
                                         if type == 'terrain':
-                                                terrain_tile_list = import_cut_graphics(tile_size_0, '../asset/terrain/forest/oak_woods_tileset.png')
-                                                tile_surface = terrain_tile_list[int(value)]
-                                                sprite = StaticTile(tile_size_0,x,y,tile_surface)
+                                                sprite = Tile(tile_size_0, x, y)
                                         if type == 'gems':
                                                 sprite = Gems(16,x,y,'../asset/object')
                                         if type == 'slime':
@@ -150,13 +143,13 @@ class LevelForest(LevelInitial, LevelFunction):
 		
                 return sprite_group
         
-        def player_setup(self,layout,change_health):
+        def player_setup(self,layout,set_health):
                 for row_index, row in enumerate(layout):
                         for col_index,val in enumerate(row):
                                 x = col_index * tile_size_0
                                 y = row_index * tile_size_0
                                 if val == '0':
-                                        sprite = Player(x, y, self.display_surface, change_health, self.check_fall)
+                                        sprite = Player(x, y, self.display_surface, set_health, self.check_fall,)
                                         self.player.add(sprite)
                                         self.spawn_x = x
                                         self.spawn_y = y
@@ -174,13 +167,30 @@ class LevelForest(LevelInitial, LevelFunction):
                                 if slime_top < player_bottom < slime_center and self.player.sprite.direction.y >= 0:
                                         self.player.sprite.direction.y = -5
                                         slime.kill()
+                                        channel_enemies.play(slime_die)
+                                        self.set_score(50)
                                 else:
-                                        self.player.sprite.get_damage()
+                                        channel_player.queue(hurt)
+                                        channel_player.set_volume(1.5)
+                                        self.player.sprite.get_damage(-20)
 
         def sprite_collision_reverse(self):
                 for sprite in self.slime_sprites.sprites():
                         if pygame.sprite.spritecollide(sprite, self.constraint_sprites, False):
                                 sprite.reverse()
+        
+        def check_win(self):
+                if pygame.sprite.spritecollide(self.player.sprite, self.goal, False):
+                        channel_sfx.play(level_win)
+                        self.win = True
+                        return self.win
+        
+        def check_gems_collisions(self):
+                collided_gems = pygame.sprite.spritecollide(self.player.sprite, self.gems_sprites, True)
+                if collided_gems:
+                        for gems in collided_gems:
+                                channel_sfx.play(gems_pick)
+                                self.set_score(50)
 
         def check_fall(self):
                 if self.player.sprite.rect.top > window_height:
@@ -207,21 +217,23 @@ class LevelForest(LevelInitial, LevelFunction):
 
                 # draw on window
                 self.goal.draw(self.display_surface)
-                self.display_surface.blit(self.map, (0, 0))
                 self.terrain_sprites.draw(self.display_surface)
+                self.display_surface.blit(self.map, (0, 0))
                 self.gems_sprites.draw(self.display_surface)
                 self.slime_sprites.draw(self.display_surface)
                 self.player.draw(self.display_surface)
 
-class LevelCave(LevelInitial, LevelFunction):
-        def __init__(self, level_data, surface, change_gems, change_health):
-                LevelInitial.__init__(self, level_data, surface, change_gems, change_health)
+class LevelForestBoss(LevelInitial, LevelFunction):
+        def __init__(self, level_data, surface, set_score, set_health, map):
+                LevelInitial.__init__(self, level_data, surface, set_score, set_health)
+                self.set_score = set_score
+                self.boss_health = 150
 
                 # sprites setup
                 player_layout = import_csv_layout(level_data['player'])
                 self.player = pygame.sprite.GroupSingle()
                 self.goal = pygame.sprite.GroupSingle()
-                self.player_setup(player_layout, change_health)
+                self.player_setup(player_layout, set_health)
 
                 terrain_layout = import_csv_layout(level_data['terrain'])
                 self.terrain_sprites = self.create_tile_group(terrain_layout,'terrain')
@@ -229,7 +241,165 @@ class LevelCave(LevelInitial, LevelFunction):
                 gems_layout = import_csv_layout(level_data['gems'])
                 self.gems_sprites = self.create_tile_group(gems_layout,'gems')
 
-                self.map = pygame.image.load('../level/images/level_1.png')
+                self.map = map
+
+                constraint_layout = import_csv_layout(level_data['constraint'])
+                self.constraint_sprites = self.create_tile_group(constraint_layout,'constraint')
+
+                boss_layout = import_csv_layout(level_data['boss'])
+                self.boss_sprites = self.create_tile_group(boss_layout,'boss')
+
+                slime_layout = import_csv_layout(level_data['slime'])
+                self.slime_sprites = self.create_tile_group(slime_layout,'slime')
+
+                
+        def create_tile_group(self, layout, type):
+                sprite_group = pygame.sprite.Group()
+
+                for row_index, row in enumerate(layout):
+                        for col_index, value in enumerate(row):
+                                if value != '-1':
+                                        x = col_index * tile_size_0
+                                        y = row_index * tile_size_0
+
+                                        if type == 'terrain':
+                                                sprite = Tile(tile_size_0, x, y)
+                                        if type == 'gems':
+                                                sprite = Gems(16,x,y,'../asset/object')
+                                        if type == 'boss':
+                                                sprite = GiantSlime(320, x, y, '../asset/enemy/giant_slime', 150)
+                                        if type == 'slime':
+                                                sprite = Slime(32, x, (y - 6), '../asset/enemy/slime/move')
+                                        if type == 'constraint':
+                                                sprite = Tile(tile_size_0, x, y)
+                                        
+                                        sprite_group.add(sprite)
+		
+                return sprite_group
+        
+        def player_setup(self,layout,set_health):
+                for row_index, row in enumerate(layout):
+                        for col_index,val in enumerate(row):
+                                x = col_index * tile_size_0
+                                y = row_index * tile_size_0
+                                if val == '0':
+                                        sprite = Player(x, y, self.display_surface, set_health, self.check_fall,)
+                                        self.player.add(sprite)
+                                        self.spawn_x = x
+                                        self.spawn_y = y
+                                if val == '1':
+                                        sprite = Tile(tile_size_0, x, y)
+                                        self.goal.add(sprite)
+        
+        def check_enemy_collisions(self):
+                enemy_collisions = pygame.sprite.spritecollide(self.player.sprite, self.slime_sprites,False)
+                if enemy_collisions:
+                        for slime in enemy_collisions:
+                                slime_center = slime.rect.centery
+                                slime_top = slime.rect.top
+                                player_bottom = self.player.sprite.rect.bottom
+                                if slime_top < player_bottom < slime_center and self.player.sprite.direction.y >= 0:
+                                        self.player.sprite.direction.y = -5
+                                        slime.kill()
+                                        channel_enemies.play(slime_die)
+                                        self.set_score(50)
+                                else:
+                                        channel_player.queue(hurt)
+                                        channel_player.set_volume(1.5)
+                                        self.player.sprite.get_damage(-20)
+
+                enemy_collisions1 = pygame.sprite.spritecollide(self.player.sprite, self.boss_sprites,False)
+                if enemy_collisions1:
+                        for boss in enemy_collisions1:
+                                boss_center = boss.rect.centery
+                                boss_top = boss.rect.top
+                                player_bottom = self.player.sprite.rect.bottom
+                                self.boss_health = boss.health
+                                if boss_top < player_bottom < boss_center and self.player.sprite.direction.y >= 0:
+                                        self.player.sprite.direction.y = -20
+                                        boss.get_damage()
+                                        self.set_score(boss.reward)
+                                elif self.player.sprite.collision_rect.y > boss_top:
+                                        channel_player.queue(hurt)
+                                        channel_player.set_volume(1.5)
+                                        self.player.sprite.get_damage(-40)
+                
+
+        def sprite_collision_reverse(self):
+                for sprite in self.boss_sprites.sprites():
+                        if pygame.sprite.spritecollide(sprite, self.constraint_sprites, False):
+                                sprite.reverse()
+
+                for sprite in self.slime_sprites.sprites():
+                        if pygame.sprite.spritecollide(sprite, self.constraint_sprites, False):
+                                sprite.reverse()
+        
+        def check_win(self):
+                if pygame.sprite.spritecollide(self.player.sprite, self.goal, False) and self.boss_health <= 0:
+                        channel_sfx.play(level_win)
+                        self.win = True
+                        return self.win
+        
+        def check_gems_collisions(self):
+                collided_gems = pygame.sprite.spritecollide(self.player.sprite, self.gems_sprites, True)
+                if collided_gems:
+                        for gems in collided_gems:
+                                channel_sfx.play(gems_pick)
+                                self.set_score(50)
+
+        def check_fall(self):
+                if self.player.sprite.rect.top > window_height:
+                        self.fall = True
+                        return self.fall
+
+        def run(self):
+                # update
+                self.gems_sprites.update(self.world_shift)
+                self.boss_sprites.update(self.world_shift)
+                if self.boss_health == 0:
+                        self.slime_sprites.update(self.world_shift)
+                self.constraint_sprites.update(self.world_shift)
+                self.player.update()
+                self.goal.update(self.world_shift)
+
+                # function
+                self.sprite_collision_reverse()
+                self.horizontal_movement_collision()
+                self.get_player_on_ground()
+                self.vertical_movement_collision()
+                self.check_fall()
+                self.check_win()
+                self.check_gems_collisions()
+                self.check_enemy_collisions()
+
+                # draw on window
+                self.goal.draw(self.display_surface)
+                self.terrain_sprites.draw(self.display_surface)
+                self.display_surface.blit(self.map, (0, 0))
+                if self.boss_health == 0:
+                        self.slime_sprites.draw(self.display_surface)
+                self.boss_sprites.draw(self.display_surface)
+                self.gems_sprites.draw(self.display_surface)
+                self.player.draw(self.display_surface)
+
+class LevelCave(LevelInitial, LevelFunction):
+        def __init__(self, level_data, surface, set_score, set_health, map):
+                LevelInitial.__init__(self, level_data, surface, set_score, set_health)
+                self.set_score = set_score
+
+                # sprites setup
+                player_layout = import_csv_layout(level_data['player'])
+                self.player = pygame.sprite.GroupSingle()
+                self.goal = pygame.sprite.GroupSingle()
+                self.player_setup(player_layout, set_health)
+
+                terrain_layout = import_csv_layout(level_data['terrain'])
+                self.terrain_sprites = self.create_tile_group(terrain_layout,'terrain')
+
+                gems_layout = import_csv_layout(level_data['gems'])
+                self.gems_sprites = self.create_tile_group(gems_layout,'gems')
+
+                self.map = map
 
                 constraint_layout = import_csv_layout(level_data['constraint'])
                 self.constraint_sprites = self.create_tile_group(constraint_layout,'constraint')
@@ -247,13 +417,11 @@ class LevelCave(LevelInitial, LevelFunction):
                                         y = row_index * tile_size_1
 
                                         if type == 'terrain':
-                                                terrain_tile_list = import_cut_graphics(tile_size_1, '../asset/terrain/cave/mainlev_build.png')
-                                                tile_surface = terrain_tile_list[int(value)]
-                                                sprite = StaticTile(tile_size_1, x, y, tile_surface)
+                                                sprite = Tile(tile_size_1, x, y)
                                         if type == 'gems':
                                                 sprite = Gems(16,x,y,'../asset/object')
                                         if type == 'worm':
-                                                sprite = Worm(tile_size_1, x, y, '../asset/enemy/worm/move')
+                                                sprite = Worm(58, x, y, '../asset/enemy/worm/move')
                                         if type == 'constraint':
                                                 sprite = Tile(tile_size_1, x, y)
                                         
@@ -261,13 +429,13 @@ class LevelCave(LevelInitial, LevelFunction):
 		
                 return sprite_group
         
-        def player_setup(self,layout,change_health):
+        def player_setup(self,layout,set_health):
                 for row_index, row in enumerate(layout):
                         for col_index,val in enumerate(row):
                                 x = col_index * tile_size_1
                                 y = row_index * tile_size_1
                                 if val == '0':
-                                        sprite = Player(x, y, self.display_surface, change_health, self.check_fall)
+                                        sprite = Player(x, y, self.display_surface, set_health, self.check_fall)
                                         self.player.add(sprite)
                                         self.spawn_x = x
                                         self.spawn_y = y
@@ -284,14 +452,31 @@ class LevelCave(LevelInitial, LevelFunction):
                                 player_bottom = self.player.sprite.rect.bottom
                                 if worm_top < player_bottom < worm_center and self.player.sprite.direction.y >= 0:
                                         self.player.sprite.direction.y = -5
+                                        channel_enemies.play(worm_die)
                                         worm.kill()
+                                        self.set_score(100)
                                 else:
-                                        self.player.sprite.get_damage()
+                                        channel_player.queue(hurt)
+                                        channel_player.set_volume(1.5)
+                                        self.player.sprite.get_damage(-30)
 
         def sprite_collision_reverse(self):
                 for sprite in self.worm_sprites.sprites():
                         if pygame.sprite.spritecollide(sprite, self.constraint_sprites, False):
                                 sprite.reverse()
+        
+        def check_win(self):
+                if pygame.sprite.spritecollide(self.player.sprite, self.goal, False):
+                        channel_sfx.play(level_win)
+                        self.win = True
+                        return self.win
+        
+        def check_gems_collisions(self):
+                collided_gems = pygame.sprite.spritecollide(self.player.sprite, self.gems_sprites, True)
+                if collided_gems:
+                        for gems in collided_gems:
+                                channel_sfx.play(gems_pick)
+                                self.set_score(50)
 
         def check_fall(self):
                 if self.player.sprite.rect.top > window_height:
@@ -318,21 +503,23 @@ class LevelCave(LevelInitial, LevelFunction):
                 
                 # draw on window
                 self.goal.draw(self.display_surface)
-                self.display_surface.blit(self.map, (0, 0))
                 self.terrain_sprites.draw(self.display_surface)
+                self.display_surface.blit(self.map, (0, 0))
                 self.gems_sprites.draw(self.display_surface)
                 self.worm_sprites.draw(self.display_surface)
                 self.player.draw(self.display_surface)
 
-class LevelCastle(LevelInitial, LevelFunction):
-        def __init__(self, level_data, surface, change_gems, change_health):
-                LevelInitial.__init__(self, level_data, surface, change_gems, change_health)
+class LevelCaveBoss(LevelInitial, LevelFunction):
+        def __init__(self, level_data, surface, set_score, set_health, map):
+                LevelInitial.__init__(self, level_data, surface, set_score, set_health)
+                self.set_score = set_score
+                self.boss_health = 150
 
                 # sprites setup
                 player_layout = import_csv_layout(level_data['player'])
                 self.player = pygame.sprite.GroupSingle()
                 self.goal = pygame.sprite.GroupSingle()
-                self.player_setup(player_layout, change_health)
+                self.player_setup(player_layout, set_health)
 
                 terrain_layout = import_csv_layout(level_data['terrain'])
                 self.terrain_sprites = self.create_tile_group(terrain_layout,'terrain')
@@ -340,7 +527,161 @@ class LevelCastle(LevelInitial, LevelFunction):
                 gems_layout = import_csv_layout(level_data['gems'])
                 self.gems_sprites = self.create_tile_group(gems_layout,'gems')
 
-                self.map = pygame.image.load('../level/images/level_2.png')
+                self.map = map
+
+                constraint_layout = import_csv_layout(level_data['constraint'])
+                self.constraint_sprites = self.create_tile_group(constraint_layout,'constraint')
+
+                worm_layout = import_csv_layout(level_data['worm'])
+                self.worm_sprites = self.create_tile_group(worm_layout,'worm')
+
+                boss_layout = import_csv_layout(level_data['boss'])
+                self.boss_sprites = self.create_tile_group(boss_layout,'boss')
+                
+        def create_tile_group(self, layout, type):
+                sprite_group = pygame.sprite.Group()
+
+                for row_index, row in enumerate(layout):
+                        for col_index, value in enumerate(row):
+                                if value != '-1':
+                                        x = col_index * tile_size_1
+                                        y = row_index * tile_size_1
+
+                                        if type == 'terrain':
+                                                sprite = Tile(tile_size_1, x, y)
+                                        if type == 'gems':
+                                                sprite = Gems(16,x,y,'../asset/object')
+                                        if type == 'worm':
+                                                sprite = Worm(58, x, y, '../asset/enemy/worm/move')
+                                        if type == 'boss':
+                                                sprite = GiantWorm(174, x, y, '../asset/enemy/giant_worm', 150)
+                                        if type == 'constraint':
+                                                sprite = Tile(tile_size_1, x, y)
+                                        
+                                        sprite_group.add(sprite)
+		
+                return sprite_group
+        
+        def player_setup(self,layout,set_health):
+                for row_index, row in enumerate(layout):
+                        for col_index,val in enumerate(row):
+                                x = col_index * tile_size_1
+                                y = row_index * tile_size_1
+                                if val == '0':
+                                        sprite = Player(x, y, self.display_surface, set_health, self.check_fall,)
+                                        self.player.add(sprite)
+                                        self.spawn_x = x
+                                        self.spawn_y = y
+                                if val == '1':
+                                        sprite = Tile(tile_size_1, x, y)
+                                        self.goal.add(sprite)
+
+        def check_enemy_collisions(self):
+                enemy_collisions = pygame.sprite.spritecollide(self.player.sprite,self.worm_sprites,False)
+                if enemy_collisions:
+                        for worm in enemy_collisions:
+                                worm_center = worm.rect.centery
+                                worm_top = worm.rect.top
+                                player_bottom = self.player.sprite.rect.bottom
+                                if worm_top < player_bottom < worm_center and self.player.sprite.direction.y >= 0:
+                                        self.player.sprite.direction.y = -5
+                                        channel_enemies.play(worm_die)
+                                        worm.kill()
+                                        self.set_score(100)
+                                else:
+                                        channel_player.queue(hurt)
+                                        channel_player.set_volume(1.5)
+                                        self.player.sprite.get_damage(-30)
+
+                enemy_collisions_1 = pygame.sprite.spritecollide(self.player.sprite,self.boss_sprites,False)
+                if enemy_collisions_1:
+                        for boss in enemy_collisions_1:
+                                boss_center = boss.rect.centery
+                                boss_top = boss.rect.top -10
+                                player_bottom = self.player.sprite.rect.bottom
+                                self.boss_health = boss.health
+                                if boss_top < player_bottom < boss_center and self.player.sprite.direction.y >= 0:
+                                        self.player.sprite.direction.y = -14
+                                        boss.get_damage()
+                                        self.set_score(boss.reward)
+                                elif self.player.sprite.collision_rect.y > boss_top:
+                                        channel_player.queue(hurt)
+                                        channel_player.set_volume(1.5)
+                                        self.player.sprite.get_damage(-60)
+
+        def sprite_collision_reverse(self):
+                for sprite in self.worm_sprites.sprites():
+                        if pygame.sprite.spritecollide(sprite, self.constraint_sprites, False):
+                                sprite.reverse()
+
+                for sprite in self.boss_sprites.sprites():
+                        if pygame.sprite.spritecollide(sprite, self.constraint_sprites, False):
+                                sprite.reverse()
+        
+        def check_win(self):
+                if pygame.sprite.spritecollide(self.player.sprite, self.goal, False) and self.boss_health <= 0:
+                        channel_sfx.play(level_win)
+                        self.win = True
+                        return self.win
+        
+        def check_gems_collisions(self):
+                collided_gems = pygame.sprite.spritecollide(self.player.sprite, self.gems_sprites, True)
+                if collided_gems:
+                        for gems in collided_gems:
+                                channel_sfx.play(gems_pick)
+                                self.set_score(50)
+
+        def check_fall(self):
+                if self.player.sprite.rect.top > window_height:
+                        self.fall = True
+                        return self.fall
+
+        def run(self):
+                # update
+                self.gems_sprites.update(self.world_shift)
+                self.worm_sprites.update(self.world_shift)
+                self.boss_sprites.update(self.world_shift)
+                self.constraint_sprites.update(self.world_shift)
+                self.player.update()
+                self.goal.update(self.world_shift)
+
+                # function
+                self.sprite_collision_reverse()
+                self.horizontal_movement_collision()
+                self.get_player_on_ground()
+                self.vertical_movement_collision()
+                self.check_fall()
+                self.check_win()
+                self.check_gems_collisions()
+                self.check_enemy_collisions()
+                
+                # draw on window
+                self.goal.draw(self.display_surface)
+                self.terrain_sprites.draw(self.display_surface)
+                self.display_surface.blit(self.map, (0, 0))
+                self.gems_sprites.draw(self.display_surface)
+                self.worm_sprites.draw(self.display_surface)
+                self.boss_sprites.draw(self.display_surface)
+                self.player.draw(self.display_surface)
+
+class LevelCastle(LevelInitial, LevelFunction):
+        def __init__(self, level_data, surface, set_score, set_health, map):
+                LevelInitial.__init__(self, level_data, surface, set_score, set_health)
+                self.set_score = set_score
+
+                # sprites setup
+                player_layout = import_csv_layout(level_data['player'])
+                self.player = pygame.sprite.GroupSingle()
+                self.goal = pygame.sprite.GroupSingle()
+                self.player_setup(player_layout, set_health)
+
+                terrain_layout = import_csv_layout(level_data['terrain'])
+                self.terrain_sprites = self.create_tile_group(terrain_layout,'terrain')
+
+                gems_layout = import_csv_layout(level_data['gems'])
+                self.gems_sprites = self.create_tile_group(gems_layout,'gems')
+
+                self.map = map
 
                 constraint_layout = import_csv_layout(level_data['constraint'])
                 self.constraint_sprites = self.create_tile_group(constraint_layout,'constraint')
@@ -358,9 +699,7 @@ class LevelCastle(LevelInitial, LevelFunction):
                                         y = row_index * tile_size_2
 
                                         if type == 'terrain':
-                                                terrain_tile_list = import_cut_graphics(tile_size_2, '../asset/terrain/castle/main_lev_build.png')
-                                                tile_surface = terrain_tile_list[int(value)]
-                                                sprite = StaticTile(tile_size_2, x, y, tile_surface)
+                                                sprite = Tile(tile_size_2, x, y)
                                         if type == 'gems':
                                                 sprite = Gems(16,x,y,'../asset/object')
                                         if type == 'knight':
@@ -377,13 +716,13 @@ class LevelCastle(LevelInitial, LevelFunction):
                         if pygame.sprite.spritecollide(sprite, self.constraint_sprites, False):
                                 sprite.reverse()
 
-        def player_setup(self,layout,change_health):
+        def player_setup(self,layout,set_health):
                 for row_index, row in enumerate(layout):
                         for col_index,val in enumerate(row):
                                 x = col_index * tile_size_2
                                 y = row_index * tile_size_2
                                 if val == '0':
-                                        sprite = Player(x, y, self.display_surface, change_health, self.check_fall)
+                                        sprite = Player(x, y, self.display_surface, set_health, self.check_fall,)
                                         self.player.add(sprite)
                                         self.spawn_x = x
                                         self.spawn_y = y
@@ -401,18 +740,29 @@ class LevelCastle(LevelInitial, LevelFunction):
                                 if knight_top < player_bottom < knight_center and self.player.sprite.direction.y >= 0:
                                         self.player.sprite.direction.y = -8
                                         knight.get_damage(10)
-                                else:
-                                        self.player.sprite.get_damage()
+                                        self.set_score(knight.reward)
+                                elif self.player.sprite.collision_rect.y > knight_top:
+                                        channel_player.queue(hurt)
+                                        channel_player.set_volume(1.5)
+                                        self.player.sprite.get_damage(-40)
+        
+        def check_win(self):
+                if pygame.sprite.spritecollide(self.player.sprite, self.goal, False):
+                        channel_sfx.play(level_win)
+                        self.win = True
+                        return self.win
+        
+        def check_gems_collisions(self):
+                collided_gems = pygame.sprite.spritecollide(self.player.sprite, self.gems_sprites, True)
+                if collided_gems:
+                        for gems in collided_gems:
+                                channel_sfx.play(gems_pick)
+                                self.set_score(50)
 
         def check_fall(self):
                 if self.player.sprite.rect.top > window_height:
                         self.fall = True
                         return self.fall
-                
-        def respawn(self):
-                if self.player.sprite.rect.top > window_height:
-                        self.player.sprite.rect.x = self.spawn_x
-                        self.player.sprite.rect.y = self.spawn_y
 
         def run(self):
                 # update
@@ -434,26 +784,31 @@ class LevelCastle(LevelInitial, LevelFunction):
 
                 # draw on window
                 self.goal.draw(self.display_surface)
-                self.display_surface.blit(self.map, (0, 0))
                 self.terrain_sprites.draw(self.display_surface)
+                self.display_surface.blit(self.map, (0, 0))
                 self.gems_sprites.draw(self.display_surface)
                 self.knight_sprites.draw(self.display_surface)
                 self.player.draw(self.display_surface)
 
 class LevelCastleBoss(LevelInitial, LevelFunction):
-        def __init__(self, level_data, surface, change_gems, change_health):
-                LevelInitial.__init__(self, level_data, surface, change_gems, change_health)
+        def __init__(self, level_data, surface, set_score, set_health, map):
+                LevelInitial.__init__(self, level_data, surface, set_score, set_health)
+                self.set_score = set_score
+                self.boss_health = 200
 
                 # sprites setup
                 player_layout = import_csv_layout(level_data['player'])
                 self.player = pygame.sprite.GroupSingle()
                 self.goal = pygame.sprite.GroupSingle()
-                self.player_setup(player_layout, change_health)
+                self.player_setup(player_layout, set_health)
 
                 terrain_layout = import_csv_layout(level_data['terrain'])
                 self.terrain_sprites = self.create_tile_group(terrain_layout,'terrain')
 
-                self.map = pygame.image.load('../level/images/level_3.png')
+                gems_layout = import_csv_layout(level_data['gems'])
+                self.gems_sprites = self.create_tile_group(gems_layout,'gems')
+
+                self.map = map
 
                 constraint_layout = import_csv_layout(level_data['constraint'])
                 self.constraint_sprites = self.create_tile_group(constraint_layout,'constraint')
@@ -471,11 +826,11 @@ class LevelCastleBoss(LevelInitial, LevelFunction):
                                         y = row_index * tile_size_2
 
                                         if type == 'terrain':
-                                                terrain_tile_list = import_cut_graphics(tile_size_2, '../asset/terrain/castle/main_lev_build.png')
-                                                tile_surface = terrain_tile_list[int(value)]
-                                                sprite = StaticTile(tile_size_2, x, y, tile_surface)
+                                                sprite = Tile(tile_size_2, x, y)
+                                        if type == 'gems':
+                                                sprite = Gems(16,x,y,'../asset/object')
                                         if type == 'boss':
-                                                sprite = Boss(tile_size_2,x,y, '../asset/enemy/boss/idle', 200, 0, 2)
+                                                sprite = Boss(98, x, y, '../asset/enemy/boss/idle', 200, 0, 2)
                                         if type == 'constraint':
                                                 sprite = Tile(tile_size_2, x, y)
                                         
@@ -488,13 +843,13 @@ class LevelCastleBoss(LevelInitial, LevelFunction):
                         if pygame.sprite.spritecollide(sprite, self.constraint_sprites, False):
                                 sprite.reverse()
 
-        def player_setup(self,layout,change_health):
+        def player_setup(self,layout,set_health):
                 for row_index, row in enumerate(layout):
                         for col_index,val in enumerate(row):
                                 x = col_index * tile_size_2
                                 y = row_index * tile_size_2
                                 if val == '0':
-                                        sprite = Player(x, y, self.display_surface, change_health, self.check_fall)
+                                        sprite = Player(x, y, self.display_surface, set_health, self.check_fall,)
                                         self.player.add(sprite)
                                         self.spawn_x = x
                                         self.spawn_y = y
@@ -507,17 +862,29 @@ class LevelCastleBoss(LevelInitial, LevelFunction):
                 if enemy_collisions:
                         for boss in enemy_collisions:
                                 boss_center = boss.rect.centery
-                                boss_top = boss.rect.top
+                                boss_top = boss.rect.top -10
                                 player_bottom = self.player.sprite.rect.bottom
                                 self.boss_health = boss.health
                                 if boss_top < player_bottom < boss_center and self.player.sprite.direction.y >= 0:
                                         self.player.sprite.direction.y = -18
-                                        boss.get_damage(10)
+                                        boss.get_damage()
+                                        self.set_score(boss.reward)
                                 else:
-                                        self.player.sprite.get_damage()
+                                        channel_player.queue(hurt)
+                                        channel_player.set_volume(1.5)
+                                        self.player.sprite.get_damage(-80)
+        
+        def check_gems_collisions(self):
+                collided_gems = pygame.sprite.spritecollide(self.player.sprite, self.gems_sprites, True)
+                if collided_gems:
+                        for gems in collided_gems:
+                                channel_sfx.play(gems_pick)
+                                self.set_score(50)
 
         def check_win(self):
                 if pygame.sprite.spritecollide(self.player.sprite, self.goal, False) and self.boss_health == 0:
+                        channel_sfx.play(level_win)
+                        channel_soundtrack.play(game_win)
                         self.win = True
                         return self.win
 
@@ -544,7 +911,7 @@ class LevelCastleBoss(LevelInitial, LevelFunction):
                 
                 # draw on window
                 self.goal.draw(self.display_surface)
-                self.display_surface.blit(self.map, (0, 0))
                 self.terrain_sprites.draw(self.display_surface)
+                self.display_surface.blit(self.map, (0, 0))
                 self.boss_sprites.draw(self.display_surface)
                 self.player.draw(self.display_surface)
