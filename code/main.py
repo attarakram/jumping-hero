@@ -69,6 +69,14 @@ class Game:
         if parameter == True:
             self.max_health += 50
 
+    def low_health_warning(self):
+        if self.health < (self.max_health * 0.2):
+            channel_dying.queue(heartbeat)
+            channel_dying.set_volume(0.5)
+            window.blit(self.ui.dying, (0, 0))
+        else:
+            channel_dying.stop()
+
     def regen(self):
         if self.health < self.max_health and self.health >= 0:
             self.set_health(self.health_regen)
@@ -78,6 +86,8 @@ class Game:
         if self.mana < self.max_mana:
             self.set_mana(self.mana_regen)
 
+        self.low_health_warning()
+
     def set_score(self, amount):
             self.score.set_score(amount)
 
@@ -85,11 +95,13 @@ class Game:
         if self.health <= 0:
             channel_ambience.stop()
             channel_soundtrack.stop()
+            channel_dying.stop()
             self.current_level = 69
             die.play()
         elif parameter == True:
             channel_ambience.stop()
             channel_soundtrack.stop()
+            channel_dying.stop()
             self.health = 0
             self.current_level = 69
             die.play()
@@ -363,6 +375,7 @@ while game.running == True:
         game.get_input()
     if game.current_level == 9:
         channel_ambience.stop()
+        channel_dying.stop()
         window.blit(game.ui.win_screen,(0, 0))
         game.ui.show_final_score(game.score.get_score())
         game.get_input()

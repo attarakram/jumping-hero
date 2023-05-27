@@ -12,6 +12,7 @@ class UI:
         self.controls = pygame.image.load('../asset/ui/controls.png')
         self.intro = pygame.image.load('../asset/ui/intro.png')
         self.start_menu = pygame.image.load('../asset/ui/start_up.png')
+        self.dying = pygame.image.load('../asset/ui/dying.png')
 
         # health
         self.bar = pygame.image.load('../asset/ui/bar.png').convert_alpha()

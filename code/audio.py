@@ -9,6 +9,7 @@ channel_enemies = pygame.mixer.Channel(2)
 channel_sfx = pygame.mixer.Channel(3)
 channel_player = pygame.mixer.Channel(4)
 channel_spell = pygame.mixer.Channel(5)
+channel_dying = pygame.mixer.Channel(6)
 
 # ui
 game_over = pygame.mixer.Sound('../audio/game_over_screen.ogg')
@@ -27,6 +28,7 @@ jumping = pygame.mixer.Sound('../audio/jump.ogg')
 hurt = pygame.mixer.Sound('../audio/hurt.ogg')
 die = pygame.mixer.Sound('../audio/die.ogg')
 heal = pygame.mixer.Sound('../audio/heal.ogg')
+heartbeat = pygame.mixer.Sound('../audio/heartbeat.ogg')
 
 # enemies = 
 slime_die = pygame.mixer.Sound('../audio/slime_death.wav')
