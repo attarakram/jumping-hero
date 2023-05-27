@@ -19,7 +19,7 @@ intro = pygame.mixer.Sound('../audio/intro.ogg')
 
 # ambience
 soundtrack = pygame.mixer.Sound('../audio/soundtrack.ogg')
-forest_ambience = pygame.mixer.Sound('../audio/forest_ambience.wav')
+forest_ambience = pygame.mixer.Sound('../audio/forest_ambience.ogg')
 cave_ambience = pygame.mixer.Sound('../audio/cave_ambience.wav')
 castle_ambience = pygame.mixer.Sound('../audio/castle_ambience.ogg')
 
